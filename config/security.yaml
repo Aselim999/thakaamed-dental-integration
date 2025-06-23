@@ -1,0 +1,23 @@
+api_security:
+  saif_api:
+    auth_type: "bearer"
+    api_keys:
+      - key: "sk_live_thakaamed_dental_prod_2024"
+        name: "production"
+        rate_limit: 1000
+      - key: "sk_test_thakaamed_dental_test_2024"
+        name: "testing"
+        rate_limit: 100
+
+hl7_security:
+  tls_enabled: true
+  certificate_path: "/certs/server.crt"
+  key_path: "/certs/server.key"
+  allowed_ips:
+    - "192.168.1.0/24"
+    - "10.0.0.0/8"
+
+database_security:
+  encryption_at_rest: true
+  connection_pool_size: 20
+  ssl_mode: "require"
