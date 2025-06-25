@@ -1,0 +1,659 @@
+<channel version="4.5.2">
+  <id>68700fbc-ed0a-418f-89e1-99aa0a00abda</id>
+  <nextMetaDataId>2</nextMetaDataId>
+  <name>Modality-Worklist-Provider_5_update</name>
+  <description></description>
+  <revision>6</revision>
+  <sourceConnector version="4.5.2">
+    <metaDataId>0</metaDataId>
+    <name>sourceConnector</name>
+    <properties class="com.mirth.connect.connectors.jdbc.DatabaseReceiverProperties" version="4.5.2">
+      <pluginProperties/>
+      <pollConnectorProperties version="4.5.2">
+        <pollingType>INTERVAL</pollingType>
+        <pollOnStart>false</pollOnStart>
+        <pollingFrequency>5000</pollingFrequency>
+        <pollingHour>0</pollingHour>
+        <pollingMinute>0</pollingMinute>
+        <cronJobs/>
+        <pollConnectorPropertiesAdvanced>
+          <weekly>true</weekly>
+          <inactiveDays>
+            <boolean>false</boolean>
+            <boolean>false</boolean>
+            <boolean>false</boolean>
+            <boolean>false</boolean>
+            <boolean>false</boolean>
+            <boolean>false</boolean>
+            <boolean>false</boolean>
+            <boolean>false</boolean>
+          </inactiveDays>
+          <dayOfMonth>1</dayOfMonth>
+          <allDay>true</allDay>
+          <startingHour>8</startingHour>
+          <startingMinute>0</startingMinute>
+          <endingHour>17</endingHour>
+          <endingMinute>0</endingMinute>
+        </pollConnectorPropertiesAdvanced>
+      </pollConnectorProperties>
+      <sourceConnectorProperties version="4.5.2">
+        <responseVariable>None</responseVariable>
+        <respondAfterProcessing>true</respondAfterProcessing>
+        <processBatch>false</processBatch>
+        <firstResponse>false</firstResponse>
+        <processingThreads>1</processingThreads>
+        <resourceIds class="linked-hash-map">
+          <entry>
+            <string>Default Resource</string>
+            <string>[Default Resource]</string>
+          </entry>
+        </resourceIds>
+        <queueBufferSize>1000</queueBufferSize>
+      </sourceConnectorProperties>
+      <driver>org.postgresql.Driver</driver>
+      <url>jdbc:postgresql://localhost:5432/thakaamed_dental</url>
+      <username>abdallaselim</username>
+      <password>admin</password>
+      <select>SELECT 
+    o.order_id AS accession_number,
+    p.patient_id,
+    p.last_name || &apos;^&apos; || p.first_name AS patient_name,
+    p.date_of_birth AS patient_birth_date,
+    p.gender AS patient_sex,
+    o.order_id AS requested_procedure_id,
+    o.procedure_name AS requested_procedure_description,
+    o.scheduled_datetime AS scheduled_procedure_step_start_datetime,
+    o.procedure_code,
+    o.ordering_physician AS scheduled_performing_physician_name,
+    &apos;DENTAL_WS&apos; AS scheduled_station_ae_title
+FROM imaging_orders o
+JOIN patients p ON o.patient_id = p.patient_id
+WHERE o.order_status = &apos;SCHEDULED&apos;
+AND DATE(o.scheduled_datetime) = CURRENT_DATE
+ORDER BY o.scheduled_datetime;
+</select>
+      <update></update>
+      <useScript>false</useScript>
+      <aggregateResults>false</aggregateResults>
+      <cacheResults>true</cacheResults>
+      <keepConnectionOpen>true</keepConnectionOpen>
+      <updateMode>1</updateMode>
+      <retryCount>3</retryCount>
+      <retryInterval>10000</retryInterval>
+      <fetchSize>1000</fetchSize>
+      <encoding>DEFAULT_ENCODING</encoding>
+    </properties>
+    <transformer version="4.5.2">
+      <elements>
+        <com.mirth.connect.plugins.javascriptstep.JavaScriptStep version="4.5.2">
+          <sequenceNumber>0</sequenceNumber>
+          <enabled>true</enabled>
+          <script>// Method 1: Using Mirth&apos;s DICOM Message Builder in Transformer
+// This goes in your channel&apos;s transformer step
+
+// Import DICOM utilities
+importPackage(Packages.com.mirth.connect.plugins.dicom.message);
+importPackage(Packages.org.dcm4che3.data);
+
+// Get source data
+var sourceData = msg;
+
+// Create new DICOM dataset
+var dataset = Attributes.createEmpty();
+
+// Process each row from your source
+for each (var row in sourceData..row) {
+    
+    // Patient Module (0010,xxxx)
+    dataset.setString(Tag.PatientName, VR.PN, row.patient_name.toString());
+    dataset.setString(Tag.PatientID, VR.LO, row.patient_id.toString());
+    dataset.setString(Tag.PatientBirthDate, VR.DA, 
+        DateUtil.formatDate(new Date(row.patient_birth_date.toString()), &quot;yyyyMMdd&quot;));
+    dataset.setString(Tag.PatientSex, VR.CS, row.patient_sex.toString());
+    
+    // Study Module (0020,xxxx)
+    dataset.setString(Tag.StudyInstanceUID, VR.UI, UUIDGenerator.getUUID());
+    dataset.setString(Tag.AccessionNumber, VR.SH, row.accession_number.toString());
+    
+    // General Equipment Module (0008,xxxx)
+    dataset.setString(Tag.Manufacturer, VR.LO, &quot;Mirth Connect&quot;);
+    dataset.setString(Tag.InstitutionName, VR.LO, &quot;Your Institution&quot;);
+    
+    // Requested Procedure Module (0032,xxxx)
+    dataset.setString(Tag.RequestedProcedureDescription, VR.LO, 
+        row.requested_procedure_description.toString());
+    dataset.setString(Tag.RequestedProcedureID, VR.SH, 
+        row.requested_procedure_id.toString());
+    
+    // Scheduled Procedure Step Sequence (0040,0100)
+    var spsSeq = dataset.newSequence(Tag.ScheduledProcedureStepSequence, 1);
+    var spsItem = Attributes.createEmpty();
+    
+    // Format scheduled date/time
+    var scheduledDateTime = new Date(row.scheduled_procedure_step_start_datetime.toString());
+    var scheduledDate = DateUtil.formatDate(scheduledDateTime, &quot;yyyyMMdd&quot;);
+    var scheduledTime = DateUtil.formatDate(scheduledDateTime, &quot;HHmmss&quot;);
+    
+    spsItem.setString(Tag.Modality, VR.CS, &quot;CR&quot;);
+    spsItem.setString(Tag.ScheduledStationAETitle, VR.AE, 
+        row.scheduled_station_ae_title.toString());
+    spsItem.setString(Tag.ScheduledProcedureStepStartDate, VR.DA, scheduledDate);
+    spsItem.setString(Tag.ScheduledProcedureStepStartTime, VR.TM, scheduledTime);
+    spsItem.setString(Tag.ScheduledPerformingPhysicianName, VR.PN, 
+        row.scheduled_performing_physician_name.toString());
+    spsItem.setString(Tag.ScheduledProcedureStepDescription, VR.LO, 
+        row.requested_procedure_description.toString());
+    spsItem.setString(Tag.ScheduledProcedureStepID, VR.SH, 
+        row.requested_procedure_id.toString());
+    spsItem.setString(Tag.ScheduledProcedureStepStatus, VR.CS, &quot;SCHEDULED&quot;);
+    
+    // Add procedure code sequence if needed
+    var codeSeq = spsItem.newSequence(Tag.ScheduledProtocolCodeSequence, 1);
+    var codeItem = Attributes.createEmpty();
+    codeItem.setString(Tag.CodeValue, VR.SH, row.procedure_code.toString());
+    codeItem.setString(Tag.CodingSchemeDesignator, VR.SH, &quot;LOCAL&quot;);
+    codeItem.setString(Tag.CodeMeaning, VR.LO, row.requested_procedure_description.toString());
+    codeSeq.add(codeItem);
+    
+    // Add SPS item to sequence
+    spsSeq.add(spsItem);
+}
+
+// Convert to DICOM message format for sending
+var dicomMessage = new DicomMessage(dataset);
+
+// Return the DICOM message
+return dicomMessage;
+
+// ========================================
+// Method 2: Manual DICOM Tag Building
+// ========================================
+
+// Alternative approach using manual tag construction
+function buildDicomWorklist(sourceData) {
+    var dicomContent = &apos;&apos;;
+    
+    for each (var row in sourceData..row) {
+        
+        // Format dates
+        var birthDate = DateUtil.formatDate(new Date(row.patient_birth_date.toString()), &quot;yyyyMMdd&quot;);
+        var scheduledDateTime = new Date(row.scheduled_procedure_step_start_datetime.toString());
+        var scheduledDate = DateUtil.formatDate(scheduledDateTime, &quot;yyyyMMdd&quot;);
+        var scheduledTime = DateUtil.formatDate(scheduledDateTime, &quot;HHmmss&quot;);
+        
+        // Build DICOM dataset
+        dicomContent += &apos;(0008,0005) CS [ISO_IR 100]\n&apos;;  // Specific Character Set
+        dicomContent += &apos;(0008,0050) SH [&apos; + row.accession_number + &apos;]\n&apos;;  // Accession Number
+        dicomContent += &apos;(0008,0090) PN [&apos; + row.scheduled_performing_physician_name + &apos;]\n&apos;;  // Referring Physician
+        dicomContent += &apos;(0008,1030) LO [&apos; + row.requested_procedure_description + &apos;]\n&apos;;  // Study Description
+        
+        // Patient Information
+        dicomContent += &apos;(0010,0010) PN [&apos; + row.patient_name + &apos;]\n&apos;;  // Patient Name
+        dicomContent += &apos;(0010,0020) LO [&apos; + row.patient_id + &apos;]\n&apos;;  // Patient ID
+        dicomContent += &apos;(0010,0030) DA [&apos; + birthDate + &apos;]\n&apos;;  // Patient Birth Date
+        dicomContent += &apos;(0010,0040) CS [&apos; + row.patient_sex + &apos;]\n&apos;;  // Patient Sex
+        
+        // Study Information
+        dicomContent += &apos;(0020,000D) UI [&apos; + UUIDGenerator.getUUID() + &apos;]\n&apos;;  // Study Instance UID
+        dicomContent += &apos;(0020,0010) SH [&apos; + row.accession_number + &apos;]\n&apos;;  // Study ID
+        
+        // Requested Procedure
+        dicomContent += &apos;(0032,1060) LO [&apos; + row.requested_procedure_description + &apos;]\n&apos;;  // Requested Procedure Description
+        dicomContent += &apos;(0040,1001) SH [&apos; + row.requested_procedure_id + &apos;]\n&apos;;  // Requested Procedure ID
+        
+        // Scheduled Procedure Step Sequence
+        dicomContent += &apos;(0040,0100) SQ [\n&apos;;  // Scheduled Procedure Step Sequence
+        dicomContent += &apos;  (0008,0060) CS [CR]\n&apos;;  // Modality
+        dicomContent += &apos;  (0040,0001) AE [&apos; + row.scheduled_station_ae_title + &apos;]\n&apos;;  // Scheduled Station AE Title
+        dicomContent += &apos;  (0040,0002) DA [&apos; + scheduledDate + &apos;]\n&apos;;  // Scheduled Procedure Step Start Date
+        dicomContent += &apos;  (0040,0003) TM [&apos; + scheduledTime + &apos;]\n&apos;;  // Scheduled Procedure Step Start Time
+        dicomContent += &apos;  (0040,0006) PN [&apos; + row.scheduled_performing_physician_name + &apos;]\n&apos;;  // Scheduled Performing Physician
+        dicomContent += &apos;  (0040,0007) LO [&apos; + row.requested_procedure_description + &apos;]\n&apos;;  // Scheduled Procedure Step Description
+        dicomContent += &apos;  (0040,0009) SH [&apos; + row.requested_procedure_id + &apos;]\n&apos;;  // Scheduled Procedure Step ID
+        dicomContent += &apos;  (0040,0020) CS [SCHEDULED]\n&apos;;  // Scheduled Procedure Step Status
+        dicomContent += &apos;  (0040,0008) SQ [\n&apos;;  // Scheduled Protocol Code Sequence
+        dicomContent += &apos;    (0008,0100) SH [&apos; + row.procedure_code + &apos;]\n&apos;;  // Code Value
+        dicomContent += &apos;    (0008,0102) SH [LOCAL]\n&apos;;  // Coding Scheme Designator
+        dicomContent += &apos;    (0008,0104) LO [&apos; + row.requested_procedure_description + &apos;]\n&apos;;  // Code Meaning
+        dicomContent += &apos;  ]\n&apos;;
+        dicomContent += &apos;]\n&apos;;
+        dicomContent += &apos;\n&apos;;
+    }
+    
+    return dicomContent;
+}
+
+// ========================================
+// Method 3: Using Channel&apos;s Destination Configuration
+// ========================================
+
+// In your DICOM Sender destination, you can also set these in the connector properties:
+// 1. Set &quot;Template&quot; to use custom DICOM template
+// 2. Map fields directly in the DICOM Sender configuration
+// 3. Use ${field_name} syntax to reference transformed data
+
+// Example destination mapping:
+var destinationMessage = {
+    &quot;PatientName&quot;: &quot;${patient_name}&quot;,
+    &quot;PatientID&quot;: &quot;${patient_id}&quot;,
+    &quot;PatientBirthDate&quot;: &quot;${formatted_birth_date}&quot;,
+    &quot;PatientSex&quot;: &quot;${patient_sex}&quot;,
+    &quot;AccessionNumber&quot;: &quot;${accession_number}&quot;,
+    &quot;ScheduledProcedureStepStartDate&quot;: &quot;${formatted_scheduled_date}&quot;,
+    &quot;ScheduledProcedureStepStartTime&quot;: &quot;${formatted_scheduled_time}&quot;,
+    &quot;Modality&quot;: &quot;CR&quot;,
+    &quot;ScheduledStationAETitle&quot;: &quot;${scheduled_station_ae_title}&quot;
+};
+
+return destinationMessage;</script>
+        </com.mirth.connect.plugins.javascriptstep.JavaScriptStep>
+        <com.mirth.connect.model.IteratorStep version="4.5.2">
+          <name>For each msg[&apos;accession_number&apos;]</name>
+          <sequenceNumber>1</sequenceNumber>
+          <enabled>false</enabled>
+          <properties>
+            <target>msg[&apos;accession_number&apos;]</target>
+            <indexVariable>i</indexVariable>
+            <prefixSubstitutions>
+              <string>msg[&apos;accession_number&apos;]</string>
+              <string>tmp</string>
+            </prefixSubstitutions>
+            <children>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name> (out) &lt;-- accession_number (in)</name>
+                <sequenceNumber>1-0</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i]</messageSegment>
+                <mapping>msg[&apos;accession_number&apos;][i].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name>attr [0] (out) &lt;-- accession_number (in)</name>
+                <sequenceNumber>1-1</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i][&apos;attr&apos;]</messageSegment>
+                <mapping>msg[&apos;accession_number&apos;][i].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name>attr [1] (out) &lt;-- patient_id (in)</name>
+                <sequenceNumber>1-2</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i][&apos;attr&apos;]</messageSegment>
+                <mapping>msg[&apos;patient_id&apos;].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name>attr [2] (out) &lt;-- patient_name (in)</name>
+                <sequenceNumber>1-3</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i][&apos;attr&apos;]</messageSegment>
+                <mapping>msg[&apos;patient_name&apos;].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name>attr [3] (out) &lt;-- patient_birth_date (in)</name>
+                <sequenceNumber>1-4</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i][&apos;attr&apos;]</messageSegment>
+                <mapping>msg[&apos;patient_birth_date&apos;].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name>attr [4] (out) &lt;-- patient_sex (in)</name>
+                <sequenceNumber>1-5</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i][&apos;attr&apos;]</messageSegment>
+                <mapping>msg[&apos;patient_sex&apos;].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name>attr [5] (out) &lt;-- requested_procedure_id (in)</name>
+                <sequenceNumber>1-6</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i][&apos;attr&apos;]</messageSegment>
+                <mapping>msg[&apos;requested_procedure_id&apos;].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name>attr [6] (out) &lt;-- requested_procedure_description (in)</name>
+                <sequenceNumber>1-7</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i][&apos;attr&apos;]</messageSegment>
+                <mapping>msg[&apos;requested_procedure_description&apos;].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name>attr [7] (out) &lt;-- scheduled_procedure_step_start_datetime (in)</name>
+                <sequenceNumber>1-8</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i][&apos;attr&apos;]</messageSegment>
+                <mapping>msg[&apos;scheduled_procedure_step_start_datetime&apos;].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name>attr [8] (out) &lt;-- procedure_code (in)</name>
+                <sequenceNumber>1-9</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i][&apos;attr&apos;]</messageSegment>
+                <mapping>msg[&apos;procedure_code&apos;].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name>attr [9] (out) &lt;-- scheduled_performing_physician_name (in)</name>
+                <sequenceNumber>1-10</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i][&apos;attr&apos;]</messageSegment>
+                <mapping>msg[&apos;scheduled_performing_physician_name&apos;].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+              <com.mirth.connect.plugins.messagebuilder.MessageBuilderStep version="4.5.2">
+                <name>attr [10] (out) &lt;-- scheduled_station_ae_title (in)</name>
+                <sequenceNumber>1-11</sequenceNumber>
+                <enabled>true</enabled>
+                <messageSegment>tmp[i][&apos;attr&apos;]</messageSegment>
+                <mapping>msg[&apos;scheduled_station_ae_title&apos;].toString()</mapping>
+                <defaultValue></defaultValue>
+                <replacements/>
+              </com.mirth.connect.plugins.messagebuilder.MessageBuilderStep>
+            </children>
+          </properties>
+        </com.mirth.connect.model.IteratorStep>
+      </elements>
+      <inboundTemplate encoding="base64">PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjxyZXN1bHQ+CiAgICA8YWNjZXNzaW9uX251bWJlcj52YWx1ZTwvYWNjZXNzaW9uX251bWJlcj4KICAgIDxwYXRpZW50X2lkPnZhbHVlPC9wYXRpZW50X2lkPgogICAgPHBhdGllbnRfbmFtZT52YWx1ZTwvcGF0aWVudF9uYW1lPgogICAgPHBhdGllbnRfYmlydGhfZGF0ZT52YWx1ZTwvcGF0aWVudF9iaXJ0aF9kYXRlPgogICAgPHBhdGllbnRfc2V4PnZhbHVlPC9wYXRpZW50X3NleD4KICAgIDxyZXF1ZXN0ZWRfcHJvY2VkdXJlX2lkPnZhbHVlPC9yZXF1ZXN0ZWRfcHJvY2VkdXJlX2lkPgogICAgPHJlcXVlc3RlZF9wcm9jZWR1cmVfZGVzY3JpcHRpb24+dmFsdWU8L3JlcXVlc3RlZF9wcm9jZWR1cmVfZGVzY3JpcHRpb24+CiAgICA8c2NoZWR1bGVkX3Byb2NlZHVyZV9zdGVwX3N0YXJ0X2RhdGV0aW1lPnZhbHVlPC9zY2hlZHVsZWRfcHJvY2VkdXJlX3N0ZXBfc3RhcnRfZGF0ZXRpbWU+CiAgICA8cHJvY2VkdXJlX2NvZGU+dmFsdWU8L3Byb2NlZHVyZV9jb2RlPgogICAgPHNjaGVkdWxlZF9wZXJmb3JtaW5nX3BoeXNpY2lhbl9uYW1lPnZhbHVlPC9zY2hlZHVsZWRfcGVyZm9ybWluZ19waHlzaWNpYW5fbmFtZT4KICAgIDxzY2hlZHVsZWRfc3RhdGlvbl9hZV90aXRsZT52YWx1ZTwvc2NoZWR1bGVkX3N0YXRpb25fYWVfdGl0bGU+CjwvcmVzdWx0Pgo=</inboundTemplate>
+      <outboundTemplate encoding="base64">PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPERpY29tT2JqZWN0PgogICAgPCEtLSBNZXRhIEluZm9ybWF0aW9uIEhlYWRlciAtLT4KICAgIDxhdHRyIHRhZz0iMDAwMjAwMDEiIHZyPSJPQiIgdmFsPSIwMCwwMSIvPiAgPCEtLSBGaWxlIE1ldGEgSW5mb3JtYXRpb24gVmVyc2lvbiAtLT4KICAgIDxhdHRyIHRhZz0iMDAwMjAwMDIiIHZyPSJVSSIgdmFsPSIxLjIuODQwLjEwMDA4LjUuMS40LjMxIi8+ICA8IS0tIE1lZGlhIFN0b3JhZ2UgU09QIENsYXNzIFVJRCAoTW9kYWxpdHkgV29ya2xpc3QpIC0tPgogICAgPGF0dHIgdGFnPSIwMDAyMDAwMyIgdnI9IlVJIiB2YWw9IiR7c3R1ZHlfaW5zdGFuY2VfdWlkfSIvPiAgPCEtLSBNZWRpYSBTdG9yYWdlIFNPUCBJbnN0YW5jZSBVSUQgLS0+CiAgICA8YXR0ciB0YWc9IjAwMDIwMDEwIiB2cj0iVUkiIHZhbD0iMS4yLjg0MC4xMDAwOC4xLjIiLz4gIDwhLS0gVHJhbnNmZXIgU3ludGF4IFVJRCAoSW1wbGljaXQgVlIgTGl0dGxlIEVuZGlhbikgLS0+CiAgICA8YXR0ciB0YWc9IjAwMDIwMDEyIiB2cj0iVUkiIHZhbD0iMS4yLjI3Ni4wLjcyMzAwMTAuMy4wLjMuNi40Ii8+ICA8IS0tIEltcGxlbWVudGF0aW9uIENsYXNzIFVJRCAtLT4KICAgIDxhdHRyIHRhZz0iMDAwMjAwMTMiIHZyPSJTSCIgdmFsPSJNSVJUSF9DT05ORUNUIi8+ICA8IS0tIEltcGxlbWVudGF0aW9uIFZlcnNpb24gTmFtZSAtLT4KICAgIAogICAgPCEtLSBTcGVjaWZpYyBDaGFyYWN0ZXIgU2V0IC0tPgogICAgPGF0dHIgdGFnPSIwMDA4MDAwNSIgdnI9IkNTIiB2YWw9IklTT19JUiAxMDAiLz4KICAgIAogICAgPCEtLSBTT1AgQ2xhc3MgVUlEIC0tPgogICAgPGF0dHIgdGFnPSIwMDA4MDAxNiIgdnI9IlVJIiB2YWw9IjEuMi44NDAuMTAwMDguNS4xLjQuMzEiLz4gIDwhLS0gTW9kYWxpdHkgV29ya2xpc3QgSW5mb3JtYXRpb24gTW9kZWwgLSBGSU5EIC0tPgogICAgCiAgICA8IS0tIFNPUCBJbnN0YW5jZSBVSUQgLS0+CiAgICA8YXR0ciB0YWc9IjAwMDgwMDE4IiB2cj0iVUkiIHZhbD0iJHtzdHVkeV9pbnN0YW5jZV91aWR9Ii8+CiAgICAKICAgIDwhLS0gU3R1ZHkgRGF0ZSAtLT4KICAgIDxhdHRyIHRhZz0iMDAwODAwMjAiIHZyPSJEQSIgdmFsPSIke3NjaGVkdWxlZF9kYXRlfSIvPgogICAgCiAgICA8IS0tIFN0dWR5IFRpbWUgLS0+CiAgICA8YXR0ciB0YWc9IjAwMDgwMDMwIiB2cj0iVE0iIHZhbD0iJHtzY2hlZHVsZWRfdGltZX0iLz4KICAgIAogICAgPCEtLSBBY2Nlc3Npb24gTnVtYmVyIC0tPgogICAgPGF0dHIgdGFnPSIwMDA4MDA1MCIgdnI9IlNIIiB2YWw9IiR7YWNjZXNzaW9uX251bWJlcn0iLz4KICAgIAogICAgPCEtLSBNb2RhbGl0eSAtLT4KICAgIDxhdHRyIHRhZz0iMDAwODAwNjAiIHZyPSJDUyIgdmFsPSJDUiIvPgogICAgCiAgICA8IS0tIFJlZmVycmluZyBQaHlzaWNpYW4ncyBOYW1lIC0tPgogICAgPGF0dHIgdGFnPSIwMDA4MDA5MCIgdnI9IlBOIiB2YWw9IiR7c2NoZWR1bGVkX3BlcmZvcm1pbmdfcGh5c2ljaWFuX25hbWV9Ii8+CiAgICAKICAgIDwhLS0gU3R1ZHkgRGVzY3JpcHRpb24gLS0+CiAgICA8YXR0ciB0YWc9IjAwMDgxMDMwIiB2cj0iTE8iIHZhbD0iJHtyZXF1ZXN0ZWRfcHJvY2VkdXJlX2Rlc2NyaXB0aW9ufSIvPgogICAgCiAgICA8IS0tIFBhdGllbnQncyBOYW1lIC0tPgogICAgPGF0dHIgdGFnPSIwMDEwMDAxMCIgdnI9IlBOIiB2YWw9IiR7cGF0aWVudF9uYW1lfSIvPgogICAgCiAgICA8IS0tIFBhdGllbnQgSUQgLS0+CiAgICA8YXR0ciB0YWc9IjAwMTAwMDIwIiB2cj0iTE8iIHZhbD0iJHtwYXRpZW50X2lkfSIvPgogICAgCiAgICA8IS0tIFBhdGllbnQncyBCaXJ0aCBEYXRlIC0tPgogICAgPGF0dHIgdGFnPSIwMDEwMDAzMCIgdnI9IkRBIiB2YWw9IiR7cGF0aWVudF9iaXJ0aF9kYXRlfSIvPgogICAgCiAgICA8IS0tIFBhdGllbnQncyBTZXggLS0+CiAgICA8YXR0ciB0YWc9IjAwMTAwMDQwIiB2cj0iQ1MiIHZhbD0iJHtwYXRpZW50X3NleH0iLz4KICAgIAogICAgPCEtLSBTdHVkeSBJbnN0YW5jZSBVSUQgLS0+CiAgICA8YXR0ciB0YWc9IjAwMjAwMDBEIiB2cj0iVUkiIHZhbD0iJHtzdHVkeV9pbnN0YW5jZV91aWR9Ii8+CiAgICAKICAgIDwhLS0gU3R1ZHkgSUQgLS0+CiAgICA8YXR0ciB0YWc9IjAwMjAwMDEwIiB2cj0iU0giIHZhbD0iJHthY2Nlc3Npb25fbnVtYmVyfSIvPgogICAgCiAgICA8IS0tIFJlcXVlc3RlZCBQcm9jZWR1cmUgRGVzY3JpcHRpb24gLS0+CiAgICA8YXR0ciB0YWc9IjAwMzIxMDYwIiB2cj0iTE8iIHZhbD0iJHtyZXF1ZXN0ZWRfcHJvY2VkdXJlX2Rlc2NyaXB0aW9ufSIvPgogICAgCiAgICA8IS0tIFNjaGVkdWxlZCBQcm9jZWR1cmUgU3RlcCBTZXF1ZW5jZSAtLT4KICAgIDxhdHRyIHRhZz0iMDA0MDAxMDAiIHZyPSJTUSI+CiAgICAgICAgPGl0ZW0+CiAgICAgICAgICAgIDwhLS0gTW9kYWxpdHkgLS0+CiAgICAgICAgICAgIDxhdHRyIHRhZz0iMDAwODAwNjAiIHZyPSJDUyIgdmFsPSJDUiIvPgogICAgICAgICAgICAKICAgICAgICAgICAgPCEtLSBTY2hlZHVsZWQgU3RhdGlvbiBBRSBUaXRsZSAtLT4KICAgICAgICAgICAgPGF0dHIgdGFnPSIwMDQwMDAwMSIgdnI9IkFFIiB2YWw9IiR7c2NoZWR1bGVkX3N0YXRpb25fYWVfdGl0bGV9Ii8+CiAgICAgICAgICAgIAogICAgICAgICAgICA8IS0tIFNjaGVkdWxlZCBQcm9jZWR1cmUgU3RlcCBTdGFydCBEYXRlIC0tPgogICAgICAgICAgICA8YXR0ciB0YWc9IjAwNDAwMDAyIiB2cj0iREEiIHZhbD0iJHtzY2hlZHVsZWRfZGF0ZX0iLz4KICAgICAgICAgICAgCiAgICAgICAgICAgIDwhLS0gU2NoZWR1bGVkIFByb2NlZHVyZSBTdGVwIFN0YXJ0IFRpbWUgLS0+CiAgICAgICAgICAgIDxhdHRyIHRhZz0iMDA0MDAwMDMiIHZyPSJUTSIgdmFsPSIke3NjaGVkdWxlZF90aW1lfSIvPgogICAgICAgICAgICAKICAgICAgICAgICAgPCEtLSBTY2hlZHVsZWQgUGVyZm9ybWluZyBQaHlzaWNpYW4ncyBOYW1lIC0tPgogICAgICAgICAgICA8YXR0ciB0YWc9IjAwNDAwMDA2IiB2cj0iUE4iIHZhbD0iJHtzY2hlZHVsZWRfcGVyZm9ybWluZ19waHlzaWNpYW5fbmFtZX0iLz4KICAgICAgICAgICAgCiAgICAgICAgICAgIDwhLS0gU2NoZWR1bGVkIFByb2NlZHVyZSBTdGVwIERlc2NyaXB0aW9uIC0tPgogICAgICAgICAgICA8YXR0ciB0YWc9IjAwNDAwMDA3IiB2cj0iTE8iIHZhbD0iJHtyZXF1ZXN0ZWRfcHJvY2VkdXJlX2Rlc2NyaXB0aW9ufSIvPgogICAgICAgICAgICAKICAgICAgICAgICAgPCEtLSBTY2hlZHVsZWQgUHJvdG9jb2wgQ29kZSBTZXF1ZW5jZSAtLT4KICAgICAgICAgICAgPGF0dHIgdGFnPSIwMDQwMDAwOCIgdnI9IlNRIj4KICAgICAgICAgICAgICAgIDxpdGVtPgogICAgICAgICAgICAgICAgICAgIDwhLS0gQ29kZSBWYWx1ZSAtLT4KICAgICAgICAgICAgICAgICAgICA8YXR0ciB0YWc9IjAwMDgwMTAwIiB2cj0iU0giIHZhbD0iJHtwcm9jZWR1cmVfY29kZX0iLz4KICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICA8IS0tIENvZGluZyBTY2hlbWUgRGVzaWduYXRvciAtLT4KICAgICAgICAgICAgICAgICAgICA8YXR0ciB0YWc9IjAwMDgwMTAyIiB2cj0iU0giIHZhbD0iTE9DQUwiLz4KICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICA8IS0tIENvZGUgTWVhbmluZyAtLT4KICAgICAgICAgICAgICAgICAgICA8YXR0ciB0YWc9IjAwMDgwMTA0IiB2cj0iTE8iIHZhbD0iJHtyZXF1ZXN0ZWRfcHJvY2VkdXJlX2Rlc2NyaXB0aW9ufSIvPgogICAgICAgICAgICAgICAgPC9pdGVtPgogICAgICAgICAgICA8L2F0dHI+CiAgICAgICAgICAgIAogICAgICAgICAgICA8IS0tIFNjaGVkdWxlZCBQcm9jZWR1cmUgU3RlcCBJRCAtLT4KICAgICAgICAgICAgPGF0dHIgdGFnPSIwMDQwMDAwOSIgdnI9IlNIIiB2YWw9IiR7cmVxdWVzdGVkX3Byb2NlZHVyZV9pZH0iLz4KICAgICAgICAgICAgCiAgICAgICAgICAgIDwhLS0gU2NoZWR1bGVkIFByb2NlZHVyZSBTdGVwIFN0YXR1cyAtLT4KICAgICAgICAgICAgPGF0dHIgdGFnPSIwMDQwMDAyMCIgdnI9IkNTIiB2YWw9IlNDSEVEVUxFRCIvPgogICAgICAgIDwvaXRlbT4KICAgIDwvYXR0cj4KICAgIAogICAgPCEtLSBSZXF1ZXN0ZWQgUHJvY2VkdXJlIElEIC0tPgogICAgPGF0dHIgdGFnPSIwMDQwMTAwMSIgdnI9IlNIIiB2YWw9IiR7cmVxdWVzdGVkX3Byb2NlZHVyZV9pZH0iLz4KICAgIAogICAgPCEtLSBSZXF1ZXN0ZWQgUHJvY2VkdXJlIENvZGUgU2VxdWVuY2UgLS0+CiAgICA8YXR0ciB0YWc9IjAwNDAxMDAzIiB2cj0iU1EiPgogICAgICAgIDxpdGVtPgogICAgICAgICAgICA8IS0tIENvZGUgVmFsdWUgLS0+CiAgICAgICAgICAgIDxhdHRyIHRhZz0iMDAwODAxMDAiIHZyPSJTSCIgdmFsPSIke3Byb2NlZHVyZV9jb2RlfSIvPgogICAgICAgICAgICAKICAgICAgICAgICAgPCEtLSBDb2RpbmcgU2NoZW1lIERlc2lnbmF0b3IgLS0+CiAgICAgICAgICAgIDxhdHRyIHRhZz0iMDAwODAxMDIiIHZyPSJTSCIgdmFsPSJMT0NBTCIvPgogICAgICAgICAgICAKICAgICAgICAgICAgPCEtLSBDb2RlIE1lYW5pbmcgLS0+CiAgICAgICAgICAgIDxhdHRyIHRhZz0iMDAwODAxMDQiIHZyPSJMTyIgdmFsPSIke3JlcXVlc3RlZF9wcm9jZWR1cmVfZGVzY3JpcHRpb259Ii8+CiAgICAgICAgPC9pdGVtPgogICAgPC9hdHRyPgo8L0RpY29tT2JqZWN0Pg==</outboundTemplate>
+      <inboundDataType>XML</inboundDataType>
+      <outboundDataType>DICOM</outboundDataType>
+      <inboundProperties class="com.mirth.connect.plugins.datatypes.xml.XMLDataTypeProperties" version="4.5.2">
+        <serializationProperties class="com.mirth.connect.plugins.datatypes.xml.XMLSerializationProperties" version="4.5.2">
+          <stripNamespaces>false</stripNamespaces>
+        </serializationProperties>
+        <batchProperties class="com.mirth.connect.plugins.datatypes.xml.XMLBatchProperties" version="4.5.2">
+          <splitType>Element_Name</splitType>
+          <elementName></elementName>
+          <level>1</level>
+          <query></query>
+          <batchScript></batchScript>
+        </batchProperties>
+      </inboundProperties>
+      <outboundProperties class="com.mirth.connect.plugins.datatypes.dicom.DICOMDataTypeProperties" version="4.5.2"/>
+    </transformer>
+    <filter version="4.5.2">
+      <elements/>
+    </filter>
+    <transportName>Database Reader</transportName>
+    <mode>SOURCE</mode>
+    <enabled>true</enabled>
+    <waitForPrevious>true</waitForPrevious>
+  </sourceConnector>
+  <destinationConnectors>
+    <connector version="4.5.2">
+      <metaDataId>1</metaDataId>
+      <name>Destination 1</name>
+      <properties class="com.mirth.connect.connectors.dimse.DICOMDispatcherProperties" version="4.5.2">
+        <pluginProperties/>
+        <destinationConnectorProperties version="4.5.2">
+          <queueEnabled>false</queueEnabled>
+          <sendFirst>false</sendFirst>
+          <retryIntervalMillis>10000</retryIntervalMillis>
+          <regenerateTemplate>false</regenerateTemplate>
+          <retryCount>0</retryCount>
+          <rotate>false</rotate>
+          <includeFilterTransformer>false</includeFilterTransformer>
+          <threadCount>1</threadCount>
+          <threadAssignmentVariable></threadAssignmentVariable>
+          <validateResponse>false</validateResponse>
+          <resourceIds class="linked-hash-map">
+            <entry>
+              <string>Default Resource</string>
+              <string>[Default Resource]</string>
+            </entry>
+          </resourceIds>
+          <queueBufferSize>1000</queueBufferSize>
+          <reattachAttachments>true</reattachAttachments>
+        </destinationConnectorProperties>
+        <host>127.0.0.1</host>
+        <port>104</port>
+        <applicationEntity>AET_WL</applicationEntity>
+        <localHost>127.0.0.1</localHost>
+        <localPort>109</localPort>
+        <localApplicationEntity>THAKAA</localApplicationEntity>
+        <template>${DICOMMESSAGE}</template>
+        <acceptTo>5000</acceptTo>
+        <async>0</async>
+        <bufSize>1</bufSize>
+        <connectTo>0</connectTo>
+        <priority>med</priority>
+        <passcode></passcode>
+        <pdv1>false</pdv1>
+        <rcvpdulen>16</rcvpdulen>
+        <reaper>10</reaper>
+        <releaseTo>5</releaseTo>
+        <rspTo>60</rspTo>
+        <shutdownDelay>1000</shutdownDelay>
+        <sndpdulen>16</sndpdulen>
+        <soCloseDelay>50</soCloseDelay>
+        <sorcvbuf>0</sorcvbuf>
+        <sosndbuf>0</sosndbuf>
+        <stgcmt>false</stgcmt>
+        <tcpDelay>true</tcpDelay>
+        <ts1>false</ts1>
+        <uidnegrsp>false</uidnegrsp>
+        <username></username>
+        <keyPW></keyPW>
+        <keyStore></keyStore>
+        <keyStorePW></keyStorePW>
+        <noClientAuth>true</noClientAuth>
+        <nossl2>true</nossl2>
+        <tls>notls</tls>
+        <trustStore></trustStore>
+        <trustStorePW></trustStorePW>
+      </properties>
+      <transformer version="4.5.2">
+        <elements/>
+        <inboundDataType>DICOM</inboundDataType>
+        <outboundDataType>HL7V2</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.dicom.DICOMDataTypeProperties" version="4.5.2"/>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DataTypeProperties" version="4.5.2">
+          <serializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2SerializationProperties" version="4.5.2">
+            <handleRepetitions>true</handleRepetitions>
+            <handleSubcomponents>true</handleSubcomponents>
+            <useStrictParser>false</useStrictParser>
+            <useStrictValidation>false</useStrictValidation>
+            <stripNamespaces>false</stripNamespaces>
+            <segmentDelimiter>\r</segmentDelimiter>
+            <convertLineBreaks>true</convertLineBreaks>
+          </serializationProperties>
+          <deserializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DeserializationProperties" version="4.5.2">
+            <useStrictParser>false</useStrictParser>
+            <useStrictValidation>false</useStrictValidation>
+            <segmentDelimiter>\r</segmentDelimiter>
+          </deserializationProperties>
+          <batchProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2BatchProperties" version="4.5.2">
+            <splitType>MSH_Segment</splitType>
+            <batchScript></batchScript>
+          </batchProperties>
+          <responseGenerationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseGenerationProperties" version="4.5.2">
+            <segmentDelimiter>\r</segmentDelimiter>
+            <successfulACKCode>AA</successfulACKCode>
+            <successfulACKMessage></successfulACKMessage>
+            <errorACKCode>AE</errorACKCode>
+            <errorACKMessage>An Error Occurred Processing Message.</errorACKMessage>
+            <rejectedACKCode>AR</rejectedACKCode>
+            <rejectedACKMessage>Message Rejected.</rejectedACKMessage>
+            <msh15ACKAccept>false</msh15ACKAccept>
+            <dateFormat>yyyyMMddHHmmss.SSS</dateFormat>
+          </responseGenerationProperties>
+          <responseValidationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseValidationProperties" version="4.5.2">
+            <successfulACKCode>AA,CA</successfulACKCode>
+            <errorACKCode>AE,CE</errorACKCode>
+            <rejectedACKCode>AR,CR</rejectedACKCode>
+            <validateMessageControlId>true</validateMessageControlId>
+            <originalMessageControlId>Destination_Encoded</originalMessageControlId>
+            <originalIdMapVariable></originalIdMapVariable>
+          </responseValidationProperties>
+        </outboundProperties>
+      </transformer>
+      <responseTransformer version="4.5.2">
+        <elements/>
+        <inboundDataType>HL7V2</inboundDataType>
+        <outboundDataType>HL7V2</outboundDataType>
+        <inboundProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DataTypeProperties" version="4.5.2">
+          <serializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2SerializationProperties" version="4.5.2">
+            <handleRepetitions>true</handleRepetitions>
+            <handleSubcomponents>true</handleSubcomponents>
+            <useStrictParser>false</useStrictParser>
+            <useStrictValidation>false</useStrictValidation>
+            <stripNamespaces>false</stripNamespaces>
+            <segmentDelimiter>\r</segmentDelimiter>
+            <convertLineBreaks>true</convertLineBreaks>
+          </serializationProperties>
+          <deserializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DeserializationProperties" version="4.5.2">
+            <useStrictParser>false</useStrictParser>
+            <useStrictValidation>false</useStrictValidation>
+            <segmentDelimiter>\r</segmentDelimiter>
+          </deserializationProperties>
+          <batchProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2BatchProperties" version="4.5.2">
+            <splitType>MSH_Segment</splitType>
+            <batchScript></batchScript>
+          </batchProperties>
+          <responseGenerationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseGenerationProperties" version="4.5.2">
+            <segmentDelimiter>\r</segmentDelimiter>
+            <successfulACKCode>AA</successfulACKCode>
+            <successfulACKMessage></successfulACKMessage>
+            <errorACKCode>AE</errorACKCode>
+            <errorACKMessage>An Error Occurred Processing Message.</errorACKMessage>
+            <rejectedACKCode>AR</rejectedACKCode>
+            <rejectedACKMessage>Message Rejected.</rejectedACKMessage>
+            <msh15ACKAccept>false</msh15ACKAccept>
+            <dateFormat>yyyyMMddHHmmss.SSS</dateFormat>
+          </responseGenerationProperties>
+          <responseValidationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseValidationProperties" version="4.5.2">
+            <successfulACKCode>AA,CA</successfulACKCode>
+            <errorACKCode>AE,CE</errorACKCode>
+            <rejectedACKCode>AR,CR</rejectedACKCode>
+            <validateMessageControlId>true</validateMessageControlId>
+            <originalMessageControlId>Destination_Encoded</originalMessageControlId>
+            <originalIdMapVariable></originalIdMapVariable>
+          </responseValidationProperties>
+        </inboundProperties>
+        <outboundProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DataTypeProperties" version="4.5.2">
+          <serializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2SerializationProperties" version="4.5.2">
+            <handleRepetitions>true</handleRepetitions>
+            <handleSubcomponents>true</handleSubcomponents>
+            <useStrictParser>false</useStrictParser>
+            <useStrictValidation>false</useStrictValidation>
+            <stripNamespaces>false</stripNamespaces>
+            <segmentDelimiter>\r</segmentDelimiter>
+            <convertLineBreaks>true</convertLineBreaks>
+          </serializationProperties>
+          <deserializationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2DeserializationProperties" version="4.5.2">
+            <useStrictParser>false</useStrictParser>
+            <useStrictValidation>false</useStrictValidation>
+            <segmentDelimiter>\r</segmentDelimiter>
+          </deserializationProperties>
+          <batchProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2BatchProperties" version="4.5.2">
+            <splitType>MSH_Segment</splitType>
+            <batchScript></batchScript>
+          </batchProperties>
+          <responseGenerationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseGenerationProperties" version="4.5.2">
+            <segmentDelimiter>\r</segmentDelimiter>
+            <successfulACKCode>AA</successfulACKCode>
+            <successfulACKMessage></successfulACKMessage>
+            <errorACKCode>AE</errorACKCode>
+            <errorACKMessage>An Error Occurred Processing Message.</errorACKMessage>
+            <rejectedACKCode>AR</rejectedACKCode>
+            <rejectedACKMessage>Message Rejected.</rejectedACKMessage>
+            <msh15ACKAccept>false</msh15ACKAccept>
+            <dateFormat>yyyyMMddHHmmss.SSS</dateFormat>
+          </responseGenerationProperties>
+          <responseValidationProperties class="com.mirth.connect.plugins.datatypes.hl7v2.HL7v2ResponseValidationProperties" version="4.5.2">
+            <successfulACKCode>AA,CA</successfulACKCode>
+            <errorACKCode>AE,CE</errorACKCode>
+            <rejectedACKCode>AR,CR</rejectedACKCode>
+            <validateMessageControlId>true</validateMessageControlId>
+            <originalMessageControlId>Destination_Encoded</originalMessageControlId>
+            <originalIdMapVariable></originalIdMapVariable>
+          </responseValidationProperties>
+        </outboundProperties>
+      </responseTransformer>
+      <filter version="4.5.2">
+        <elements/>
+      </filter>
+      <transportName>DICOM Sender</transportName>
+      <mode>DESTINATION</mode>
+      <enabled>true</enabled>
+      <waitForPrevious>true</waitForPrevious>
+    </connector>
+  </destinationConnectors>
+  <preprocessingScript>// Modify the message variable below to pre process data
+return message;</preprocessingScript>
+  <postprocessingScript>// This script executes once after a message has been processed
+// Responses returned from here will be stored as &quot;Postprocessor&quot; in the response map
+return;</postprocessingScript>
+  <deployScript>// This script executes once when the channel is deployed
+// You only have access to the globalMap and globalChannelMap here to persist data
+return;</deployScript>
+  <undeployScript>// This script executes once when the channel is undeployed
+// You only have access to the globalMap and globalChannelMap here to persist data
+return;</undeployScript>
+  <properties version="4.5.2">
+    <clearGlobalChannelMap>true</clearGlobalChannelMap>
+    <messageStorageMode>DEVELOPMENT</messageStorageMode>
+    <encryptData>false</encryptData>
+    <encryptAttachments>false</encryptAttachments>
+    <encryptCustomMetaData>false</encryptCustomMetaData>
+    <removeContentOnCompletion>false</removeContentOnCompletion>
+    <removeOnlyFilteredOnCompletion>false</removeOnlyFilteredOnCompletion>
+    <removeAttachmentsOnCompletion>false</removeAttachmentsOnCompletion>
+    <initialState>STARTED</initialState>
+    <storeAttachments>true</storeAttachments>
+    <metaDataColumns>
+      <metaDataColumn>
+        <name>SOURCE</name>
+        <type>STRING</type>
+        <mappingName>mirth_source</mappingName>
+      </metaDataColumn>
+      <metaDataColumn>
+        <name>TYPE</name>
+        <type>STRING</type>
+        <mappingName>mirth_type</mappingName>
+      </metaDataColumn>
+    </metaDataColumns>
+    <attachmentProperties version="4.5.2">
+      <type>None</type>
+      <properties/>
+    </attachmentProperties>
+    <resourceIds class="linked-hash-map">
+      <entry>
+        <string>Default Resource</string>
+        <string>[Default Resource]</string>
+      </entry>
+    </resourceIds>
+  </properties>
+  <exportData>
+    <metadata>
+      <enabled>true</enabled>
+      <lastModified>
+        <time>1750810460717</time>
+        <timezone>Africa/Cairo</timezone>
+      </lastModified>
+      <pruningSettings>
+        <archiveEnabled>true</archiveEnabled>
+        <pruneErroredMessages>false</pruneErroredMessages>
+      </pruningSettings>
+      <userId>1</userId>
+    </metadata>
+  </exportData>
+</channel>

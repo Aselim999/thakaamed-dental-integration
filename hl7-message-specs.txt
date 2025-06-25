@@ -1,0 +1,369 @@
+# HL7 Message Specifications - ThakaaMed Dental IQ Integration
+
+## 1. Message Structure Overview
+
+### 1.1 General Message Format
+```
+[SEGMENT]|[FIELD1]|[FIELD2]|[FIELD3]|...|[FIELDn]<CR>
+```
+
+### 1.2 Encoding Characters
+- Field Separator: `|`
+- Component Separator: `^`
+- Repetition Separator: `~`
+- Escape Character: `\`
+- Sub-component Separator: `&`
+
+## 2. ORM^O01 - Order Message Specification
+
+### 2.1 Message Structure
+```
+MSH - Message Header
+PID - Patient Identification
+PV1 - Patient Visit
+ORC - Common Order
+OBR - Observation Request
+NTE - Notes and Comments (Optional)
+```
+
+### 2.2 Field Specifications
+
+#### MSH - Message Header Segment
+| Field | Len | DT | Opt | Component | Description | Example |
+|-------|-----|-----|-----|-----------|-------------|---------|
+| MSH-1 | 1 | ST | R | | Field Separator | `|` |
+| MSH-2 | 5 | ST | R | | Encoding Characters | `^~\&` |
+| MSH-3 | 227 | HD | R | | Sending Application | `HIS` |
+| MSH-4 | 227 | HD | R | | Sending Facility | `HOSPITAL` |
+| MSH-5 | 227 | HD | R | | Receiving Application | `RIS` |
+| MSH-6 | 227 | HD | R | | Receiving Facility | `RADIOLOGY` |
+| MSH-7 | 26 | TS | R | | Date/Time of Message | `20241215143000` |
+| MSH-9 | 15 | MSG | R | | Message Type | `ORM^O01` |
+| MSH-10 | 20 | ST | R | | Message Control ID | `MSG20241215001` |
+| MSH-11 | 3 | PT | R | | Processing ID | `P` |
+| MSH-12 | 60 | VID | R | | Version ID | `2.5` |
+
+#### PID - Patient Identification Segment
+| Field | Len | DT | Opt | Component | Description | Example |
+|-------|-----|-----|-----|-----------|-------------|---------|
+| PID-1 | 4 | SI | O | | Set ID | `1` |
+| PID-3 | 250 | CX | R | | Patient Identifier List | `12345^^^HOSPITAL^MR` |
+| PID-5 | 250 | XPN | R | | Patient Name | `ALBADR^AHMED^MOHAMMAD` |
+| PID-7 | 26 | TS | R | | Date of Birth | `19850312` |
+| PID-8 | 1 | IS | R | | Sex | `M` |
+| PID-11 | 250 | XAD | O | | Patient Address | `123 MAIN ST^RIYADH^RIYADH^12345^SA` |
+| PID-13 | 250 | XTN | O | | Phone Number - Home | `(011)555-0123` |
+
+#### ORC - Common Order Segment
+| Field | Len | DT | Opt | Component | Description | Example |
+|-------|-----|-----|-----|-----------|-------------|---------|
+| ORC-1 | 2 | ID | R | | Order Control | `NW` (New Order) |
+| ORC-2 | 22 | EI | R | | Placer Order Number | `ORD001` |
+| ORC-3 | 22 | EI | C | | Filler Order Number | `REQ001` |
+| ORC-5 | 2 | ID | O | | Order Status | `SC` (Scheduled) |
+| ORC-9 | 26 | TS | R | | Date/Time of Transaction | `20241215143000` |
+| ORC-12 | 250 | XCN | O | | Ordering Provider | `DR.SMITH^JOHN^A` |
+
+#### OBR - Observation Request Segment
+| Field | Len | DT | Opt | Component | Description | Example |
+|-------|-----|-----|-----|-----------|-------------|---------|
+| OBR-1 | 4 | SI | O | | Set ID | `1` |
+| OBR-2 | 22 | EI | R | | Placer Order Number | `ORD001` |
+| OBR-3 | 22 | EI | R | | Filler Order Number | `REQ001` |
+| OBR-4 | 250 | CE | R | | Universal Service ID | `PANO^Panoramic X-Ray^L` |
+| OBR-7 | 26 | TS | R | | Observation Date/Time | `20241215150000` |
+| OBR-16 | 250 | XCN | O | | Ordering Provider | `DR.JONES^MARY^B` |
+| OBR-25 | 1 | ID | O | | Result Status | `F` (Final) |
+
+## 3. ORU^R01 - Observation Result Message
+
+### 3.1 Message Structure
+```
+MSH - Message Header
+PID - Patient Identification
+PV1 - Patient Visit
+ORC - Common Order
+OBR - Observation Request
+OBX - Observation/Result (Repeating)
+```
+
+### 3.2 OBX - Observation/Result Segment
+| Field | Len | DT | Opt | Component | Description | Example |
+|-------|-----|-----|-----|-----------|-------------|---------|
+| OBX-1 | 4 | SI | O | | Set ID | `1` |
+| OBX-2 | 2 | ID | C | | Value Type | `TX` (Text) |
+| OBX-3 | 250 | CE | R | | Observation Identifier | `AI_FINDING^AI Analysis^L` |
+| OBX-5 | 99999 | varies | C | | Observation Value | `Caries detected in tooth #14` |
+| OBX-6 | 250 | CE | O | | Units | `%` |
+| OBX-11 | 1 | ID | R | | Observation Result Status | `F` (Final) |
+| OBX-14 | 26 | TS | O | | Date/Time of Observation | `20241215153000` |
+
+### 3.3 AI-Specific OBX Types
+
+#### Finding Type
+```
+OBX|1|TX|AI_FINDING^AI Analysis Finding^L||Caries detected in tooth #14||||||F
+```
+
+#### Confidence Score
+```
+OBX|2|NM|CONFIDENCE^Finding Confidence^L||95|%|||||F
+```
+
+#### Overall Confidence
+```
+OBX|3|NM|OVERALL_CONFIDENCE^Overall Analysis Confidence^L||91|%|||||F
+```
+
+#### Image Annotation Link
+```
+OBX|4|RP|AI_ANNOTATION^Image Annotation^L||http://viewer.thakaamed.com/study/ORD001||||||F
+```
+
+## 4. MDM^T02 - Medical Document Management
+
+### 4.1 Message Structure
+```
+MSH - Message Header
+EVN - Event Type
+PID - Patient Identification
+PV1 - Patient Visit
+TXA - Transcription Document Header
+OBX - Observation/Result (Document Content)
+```
+
+### 4.2 TXA - Transcription Document Header
+| Field | Len | DT | Opt | Component | Description | Example |
+|-------|-----|-----|-----|-----------|-------------|---------|
+| TXA-1 | 4 | SI | R | | Set ID | `1` |
+| TXA-2 | 30 | IS | R | | Document Type | `DI` (Diagnostic Imaging) |
+| TXA-3 | 2 | ID | C | | Document Content Presentation | `TX` (Text) |
+| TXA-4 | 26 | TS | O | | Activity Date/Time | `20241215154500` |
+| TXA-12 | 30 | EI | R | | Unique Document Number | `DOC001` |
+| TXA-17 | 2 | ID | R | | Document Completion Status | `AU` (Authenticated) |
+| TXA-19 | 2 | ID | O | | Document Availability Status | `AV` (Available) |
+
+### 4.3 Document Content in OBX
+```
+OBX|1|ED|REPORT^Final Report^L||^TEXT^RTF^Base64^[Base64EncodedContent]||||||F
+```
+
+## 5. ACK - Acknowledgment Message
+
+### 5.1 Success Acknowledgment
+```
+MSH|^~\&|RIS|RADIOLOGY|HIS|HOSPITAL|20241215150000||ACK^O01|ACK001|P|2.5
+MSA|AA|MSG001|Message accepted
+```
+
+### 5.2 Error Acknowledgment
+```
+MSH|^~\&|RIS|RADIOLOGY|HIS|HOSPITAL|20241215150000||ACK^O01|ACK002|P|2.5
+MSA|AE|MSG001|Missing required field PID-3
+ERR|PID^1^3^1|M|101|Missing required field|E
+```
+
+## 6. Custom Segments for AI Integration
+
+### 6.1 ZAI - AI Analysis Information Segment
+| Field | Len | DT | Opt | Component | Description | Example |
+|-------|-----|-----|-----|-----------|-------------|---------|
+| ZAI-1 | 20 | ST | R | | Analysis ID | `AI20241215001` |
+| ZAI-2 | 10 | ST | R | | Analysis Type | `DENTAL_COMP` |
+| ZAI-3 | 5 | NM | R | | Confidence Score | `91.5` |
+| ZAI-4 | 26 | TS | R | | Analysis Start Time | `20241215152800` |
+| ZAI-5 | 26 | TS | R | | Analysis End Time | `20241215153000` |
+| ZAI-6 | 10 | ST | R | | AI Model Version | `v2.1.0` |
+| ZAI-7 | 250 | ST | O | | Viewer URL | `http://viewer.thakaamed.com/AI20241215001` |
+
+### 6.2 ZFN - AI Finding Detail Segment (Repeating)
+| Field | Len | DT | Opt | Component | Description | Example |
+|-------|-----|-----|-----|-----------|-------------|---------|
+| ZFN-1 | 4 | SI | R | | Set ID | `1` |
+| ZFN-2 | 20 | ST | R | | Finding Type | `CARIES` |
+| ZFN-3 | 250 | ST | R | | Finding Description | `Deep caries in tooth #14` |
+| ZFN-4 | 10 | ST | R | | Location Code | `T14` |
+| ZFN-5 | 5 | NM | R | | Confidence | `95.0` |
+| ZFN-6 | 10 | ST | R | | Severity | `MODERATE` |
+| ZFN-7 | 100 | ST | O | | Bounding Box | `120,340,180,400` |
+| ZFN-8 | 250 | ST | O | | Clinical Significance | `Requires immediate treatment` |
+
+## 7. Message Examples with AI Integration
+
+### 7.1 Complete Order with AI Request Flag
+```
+MSH|^~\&|HIS|HOSPITAL|RIS|RADIOLOGY|20241215143000||ORM^O01|MSG001|P|2.5
+PID|1||PAT123^^^HOSPITAL^MR||MOHAMMED^AHMED^A||19850515|M|||123 King Road^Riyadh^Riyadh^12345^SA||(966)555-0123
+PV1||O|DENTAL||||||||||||||||VIS456
+ORC|NW|ORD2024001|REQ2024001||SC||||20241215143000|||DR.HASSAN^OMAR^S
+OBR|1|ORD2024001|REQ2024001|PANO^Panoramic X-Ray^L|||20241215150000||||||||||DR.KHALIL^SARA^M||||||||F
+NTE|1||AI Analysis Required: YES
+ZAI|||||||||DENTAL_COMP
+```
+
+### 7.2 AI Results with Multiple Findings
+```
+MSH|^~\&|SAIF|THAKAAMED|RIS|RADIOLOGY|20241215153000||ORU^R01|AI001|P|2.5
+PID|1||PAT123^^^HOSPITAL^MR||MOHAMMED^AHMED^A||19850515|M
+PV1||O|DENTAL
+ORC|RE||ORD2024001
+OBR|1|ORD2024001|REQ2024001|PANO^Panoramic X-Ray^L|||20241215150000|||||||||||F|||20241215153000
+ZAI|AI20241215001|DENTAL_COMP|89.5|20241215152800|20241215153000|v2.1.0|http://viewer.thakaamed.com/AI20241215001
+OBX|1|TX|AI_STATUS^AI Analysis Status^L||COMPLETED||||||F
+ZFN|1|CARIES|Deep caries detected|T14|95.0|SEVERE|120,340,180,400|Immediate root canal recommended
+ZFN|2|CARIES|Initial caries detected|T26|87.5|MILD|220,340,280,400|Monitor, preventive care advised
+ZFN|3|BONE_LOSS|Periodontal bone loss|MAND_R|82.0|MODERATE||Consider periodontal consultation
+OBX|2|NM|OVERALL_CONFIDENCE^Overall Confidence^L||89.5|%|||||F
+OBX|3|TX|AI_SUMMARY^AI Summary^L||3 findings detected: 2 caries, 1 bone loss. Urgent dental consultation recommended.||||||F
+OBX|4|RP|ANNOTATED_IMAGE^Annotated Image^L||http://viewer.thakaamed.com/annotated/AI20241215001||||||F
+```
+
+### 7.3 Final Report with AI Integration
+```
+MSH|^~\&|RIS|RADIOLOGY|HIS|HOSPITAL|20241215154500||MDM^T02|MDM001|P|2.5
+EVN|T02|20241215154500
+PID|1||PAT123^^^HOSPITAL^MR||MOHAMMED^AHMED^A||19850515|M
+PV1||O|DENTAL
+TXA|1|DI|TX|20241215154500||||||DOC2024001|||||AU||AV
+OBX|1|TX|CLINICAL_HISTORY^Clinical History^L||Routine dental examination, patient complains of sensitivity||||||F
+OBX|2|TX|TECHNIQUE^Technique^L||Digital panoramic radiograph obtained||||||F
+OBX|3|TX|AI_FINDINGS^AI Analysis Findings^L||AI-assisted analysis (confidence: 89.5%) detected the following:~1. Deep caries in tooth #14 (95% confidence) - severe~2. Initial caries in tooth #26 (87.5% confidence) - mild~3. Periodontal bone loss in right mandibular region (82% confidence) - moderate||||||F
+OBX|4|TX|RADIOLOGIST_FINDINGS^Radiologist Findings^L||Agree with AI findings. Additionally noted:~- Impacted wisdom tooth #38~- Mild TMJ irregularity on left side||||||F
+OBX|5|TX|IMPRESSION^Impression^L||1. Multiple dental caries requiring treatment~2. Moderate periodontal disease~3. Impacted third molar||||||F
+OBX|6|TX|RECOMMENDATIONS^Recommendations^L||1. Urgent dental consultation for tooth #14~2. Periodontal evaluation~3. Consider extraction of tooth #38||||||F
+OBX|7|ED|REPORT_PDF^Full Report PDF^L||^APPLICATION^PDF^Base64^[Base64EncodedPDFContent]||||||F
+OBX|8|RP|IMAGES_URL^Images URL^L||http://pacs.hospital.com/study/ORD2024001||||||F
+ZAI|AI20241215001|DENTAL_COMP|89.5|20241215152800|20241215153000|v2.1.0|http://viewer.thakaamed.com/AI20241215001
+```
+
+## 8. Field Value Tables
+
+### 8.1 Order Control (ORC-1) Values
+| Value | Description |
+|-------|-------------|
+| NW | New order |
+| OK | Order accepted |
+| CA | Cancel order |
+| SC | Status changed |
+| SN | Send order number |
+
+### 8.2 Order Status (ORC-5) Values
+| Value | Description |
+|-------|-------------|
+| SC | Scheduled |
+| IP | In Progress |
+| CM | Completed |
+| CA | Cancelled |
+| DC | Discontinued |
+
+### 8.3 Result Status (OBR-25) Values
+| Value | Description |
+|-------|-------------|
+| O | Order received |
+| I | In progress |
+| S | Scheduled |
+| P | Preliminary |
+| F | Final |
+| C | Corrected |
+| X | Cancelled |
+
+### 8.4 AI Finding Types
+| Code | Description |
+|------|-------------|
+| CARIES | Dental caries |
+| BONE_LOSS | Bone loss |
+| PERIAPICAL | Periapical lesion |
+| FRACTURE | Tooth fracture |
+| IMPACTION | Tooth impaction |
+| TMJ | TMJ disorder |
+| CALCULUS | Dental calculus |
+| RESORPTION | Root resorption |
+
+### 8.5 Severity Levels
+| Code | Description |
+|------|-------------|
+| MINIMAL | Minimal finding |
+| MILD | Mild severity |
+| MODERATE | Moderate severity |
+| SEVERE | Severe severity |
+| CRITICAL | Critical finding |
+
+## 9. Message Validation Rules
+
+### 9.1 Required Fields Validation
+- All R (Required) fields must be present
+- Message Control ID must be unique
+- Date/Time fields must be valid timestamps
+
+### 9.2 Business Rules
+1. Order ID must be unique within the system
+2. Patient must exist before order placement
+3. AI analysis can only be triggered for completed procedures
+4. Confidence scores must be between 0-100
+5. Final reports require radiologist verification
+
+### 9.3 Field Length Validation
+- Enforce maximum field lengths as specified
+- Truncate with warning for oversized optional fields
+- Reject message for oversized required fields
+
+## 10. Error Handling Specifications
+
+### 10.1 Application Error Codes
+| Code | Description | Action |
+|------|-------------|--------|
+| 100 | Segment sequence error | Reject |
+| 101 | Required field missing | Reject |
+| 102 | Data type error | Reject |
+| 103 | Table value not found | Warning |
+| 200 | Unsupported message type | Reject |
+| 201 | Unsupported trigger event | Reject |
+| 202 | Unsupported processing ID | Reject |
+| 203 | Version ID mismatch | Warning |
+
+### 10.2 Application Acknowledgment Codes
+| Code | Text | Description |
+|------|------|-------------|
+| AA | Application Accept | Message accepted |
+| AE | Application Error | Message rejected due to error |
+| AR | Application Reject | Message rejected for business reason |
+
+## 11. Implementation Notes
+
+### 11.1 Character Encoding
+- Use UTF-8 for all message content
+- Escape special characters according to HL7 rules
+- Support Arabic characters in patient names and addresses
+
+### 11.2 Timestamp Format
+- Format: YYYYMMDDHHMMSS
+- All times in local timezone unless specified
+- Include timezone offset when required
+
+### 11.3 Null Values
+- Use `""` (empty string) for null values
+- Do not omit trailing fields if followed by non-null values
+- Omit trailing null fields at segment end
+
+### 11.4 Message Wrapping
+- Start each message with MLLP start byte (0x0B)
+- End each message with MLLP end bytes (0x1C 0x0D)
+- Maximum message size: 10MB
+
+## 12. Testing Checklist
+
+- [ ] Message structure validation
+- [ ] Required fields presence
+- [ ] Field length compliance
+- [ ] Character encoding verification
+- [ ] Special character escaping
+- [ ] Timestamp format validation
+- [ ] Segment sequence validation
+- [ ] Business rule compliance
+- [ ] Error message generation
+- [ ] Acknowledgment generation
+- [ ] Arabic character support
+- [ ] Large message handling
+- [ ] Concurrent message processing
+- [ ] Message retry logic
+- [ ] Audit trail generation

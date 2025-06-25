@@ -16,8 +16,8 @@ def get_db_connection():
     return psycopg2.connect(
         host="localhost",
         database="thakaamed_dental",
-        user="postgres",
-        password="postgres",
+        user="abdallaselim",
+        password="admin",
         cursor_factory=RealDictCursor
     )
 
